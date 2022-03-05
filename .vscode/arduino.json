@@ -1,0 +1,7 @@
+{
+    "sketch": "zar.ino",
+    "configuration": "cpu=atmega328old",
+    "board": "arduino:avr:nano",
+    "port": "COM13",
+    "programmer": "arduino:avrisp"
+}
