@@ -8,6 +8,8 @@ Servo servo_b;
 #define PIN_SWITCH_C 3
 #define PIN_SWITCH_D 11
 
+#define MAJAK_PROG_LEN 6
+
 struct servoZar {
     Servo servo;
     uint16_t position;
@@ -35,6 +37,7 @@ inputZar input_funkce;
 uint32_t tm_ms;
 uint32_t tm_ms_prev;
 uint32_t tm_ms_print;
+uint32_t tm_ms_blik;
 
 int8_t fce_sel;
 uint16_t fce_tm;
@@ -42,6 +45,10 @@ uint8_t fce_done;
 
 uint8_t reflektor_state;
 uint8_t osvetleni_state;
+uint8_t radar_state;
+uint8_t majak_state;
+uint8_t majak_i;
+uint8_t majak_prog[MAJAK_PROG_LEN];
 
 /**
  * Nastaveni
@@ -53,6 +60,15 @@ void setup() {
     fce_done = 0;
     reflektor_state = 0;
     osvetleni_state = 0;
+    radar_state = 0;
+    majak_state = 0;
+    majak_i = 0;
+    majak_prog[0] = 1;
+    majak_prog[1] = 0;
+    majak_prog[2] = 1;
+    majak_prog[3] = 0;
+    majak_prog[4] = 0;
+    majak_prog[5] = 0;
 
     // vstup otaceni
     input_otaceni.pin = A0;
@@ -114,6 +130,7 @@ void setup() {
     servo_vyska.position = 1340;
 
     tm_ms_print = 0;
+    tm_ms_blik = 0;
     tm_ms = millis();
     tm_ms_prev = millis();
 }
@@ -197,14 +214,29 @@ void loop(){
             servo_vyska.position = servo_vyska.limit_from;
         }
     }
+
+    // slider je v horni casti
     if(input_funkce.value > input_funkce.center + input_funkce.deadband){
+        // horni bliz stredu
         fce_act = 1;
+        // horni koncova
         if(input_funkce.value > input_funkce.max - ((input_funkce.max - input_funkce.center - input_funkce.deadband) / 2)) fce_act = 2;
     }
+
+    // slider je v dolni casti
+    if(input_funkce.value < input_funkce.center - input_funkce.deadband){
+        // dolni bliz stredu
+        fce_act = 3;
+        // spodni koncova
+        if(input_funkce.value < input_funkce.min + ((input_funkce.center - input_funkce.deadband - input_funkce.min) / 2)) fce_act = 4;
+    }
+
+    // slider je uprostred
     if(input_funkce.value <= input_funkce.center + input_funkce.deadband && input_funkce.value >= input_funkce.center - input_funkce.deadband){
         fce_act = 0;
     }
 
+    // je v pozici dostatecne dlouho, aby se to stalo?
     if(fce_act == fce_sel){
         fce_tm += tm_ms - tm_ms_prev;
     } else {
@@ -240,11 +272,53 @@ void loop(){
                 osvetleni_state = 0;
                 fce_done = 1;
             }   
-        }        
+        }
+
+        // radar
+        if(fce_sel == 3){
+            if(radar_state == 0){
+                // zapneme radar
+                analogWrite(PIN_SWITCH_B, 50);
+                radar_state = 1;
+                fce_done = 1;
+            } else {
+                // vypneme radar
+                analogWrite(PIN_SWITCH_B, 0);
+                radar_state = 0;
+                fce_done = 1;
+            }
+        }
+
+        // majak
+        if(fce_sel == 4){
+            if(majak_state == 0){
+                //digitalWrite(PIN_SWITCH_A, HIGH);
+                majak_state = 1;
+                fce_done = 1;
+            } else {
+                digitalWrite(PIN_SWITCH_A, LOW);
+                majak_state = 0;
+                fce_done = 1;
+            }            
+        }
+    }
+
+    // blikani majaku
+    if(majak_state == 1){
+        if(tm_ms - tm_ms_blik > 100){
+            if(majak_prog[majak_i] == 1){
+                digitalWrite(PIN_SWITCH_A, HIGH);
+            } else {
+                digitalWrite(PIN_SWITCH_A, LOW);
+            }
+            majak_i++;
+            if(majak_i == MAJAK_PROG_LEN) majak_i = 0;
+            tm_ms_blik = tm_ms;
+        }
     }
 
     if(tm_ms - tm_ms_print > 500){
-        sprintf(str_buff, "T %lu | O %lu V %lu F %lu | O %u V %u", tm_ms / 1000, input_otaceni.value, input_vyska.value, input_funkce.value, servo_otaceni.position, servo_vyska.position);
+        sprintf(str_buff, "T %lu | O %lu V %lu F %lu | O %u V %u | Radar %u | Majak %u", tm_ms / 1000, input_otaceni.value, input_vyska.value, input_funkce.value, servo_otaceni.position, servo_vyska.position, radar_state, majak_state);
         Serial.println(str_buff);
         tm_ms_print = tm_ms;
     }
